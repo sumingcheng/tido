@@ -13,13 +13,13 @@ import (
 // TodoUpdateArgs 是 todo_update 的入参。
 // 所有字段（除 ID）省略 = 不变更；至少传一个可变字段。
 type TodoUpdateArgs struct {
-	ID          string `json:"id" jsonschema:" 待更新的 todo 短码（如 t3a）。"`
-	Status      string `json:"status,omitempty" jsonschema:" pending | in_progress | completed | cancelled。"`
-	Content     string `json:"content,omitempty" jsonschema:" 新内容；省略=不变。"`
-	Priority    string `json:"priority,omitempty" jsonschema:" low | medium | high | urgent。"`
-	Difficulty  string `json:"difficulty,omitempty" jsonschema:" trivial | easy | medium | hard。"`
-	DueAt       string `json:"due_at,omitempty" jsonschema:" 截止时间：unix ms 或 RFC3339；省略=不变。"`
-	ClearDueAt  bool   `json:"clear_due_at,omitempty" jsonschema:" true 表示清除截止时间（与 due_at 互斥）。"`
+	ID         string `json:"id" jsonschema:" 待更新的 todo 短码（如 t3a）。"`
+	Status     string `json:"status,omitempty" jsonschema:" pending | in_progress | completed | cancelled。"`
+	Content    string `json:"content,omitempty" jsonschema:" 新内容；省略=不变。"`
+	Priority   string `json:"priority,omitempty" jsonschema:" low | medium | high | urgent。"`
+	Difficulty string `json:"difficulty,omitempty" jsonschema:" trivial | easy | medium | hard。"`
+	DueAt      string `json:"due_at,omitempty" jsonschema:" 截止时间：unix ms 或 RFC3339；省略=不变。"`
+	ClearDueAt bool   `json:"clear_due_at,omitempty" jsonschema:" true 表示清除截止时间（与 due_at 互斥）。"`
 }
 
 // TodoUpdateResult 是 todo_update 的返回。

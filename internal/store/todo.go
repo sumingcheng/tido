@@ -431,10 +431,10 @@ func scanTodos(rows *sql.Rows) ([]Todo, error) {
 	var out []Todo
 	for rows.Next() {
 		var (
-			t        Todo
-			due      sql.NullInt64
-			parent   sql.NullString
-			noteCnt  int
+			t       Todo
+			due     sql.NullInt64
+			parent  sql.NullString
+			noteCnt int
 		)
 		if err := rows.Scan(
 			&t.ID, &t.Scope, &t.Content, &t.Status,
