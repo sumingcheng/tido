@@ -1,7 +1,9 @@
 ---
 name: tido
-description: Personal todo list for AI agents using markdown files. Use when the user asks you to track tasks, plan multi-step work, remember progress across sessions, resume interrupted work, or coordinate with other agents on shared todos. Tasks live in `~/.tido/<scope>.md`, completed items archived to `~/.tido/<scope>.archive.md`.
+description: "[STALE] 旧 Skill-only 设计，已废弃。等 MCP server 实现后将重写为工具使用指引。请勿基于此版本设计 agent 行为。"
 ---
+
+> ⚠️ **此文件已废弃**。项目方向回正为 **MCP server + Skill**（详见 `DESIGN.md`），本文件作为 Skill-only 历史方案保留，将在 MCP 工具实现完成后**整体重写**。当前内容（agent 直接读写 markdown 文件）**不再是项目交付方式**。
 
 # Tido — AI Agent 的待办本
 

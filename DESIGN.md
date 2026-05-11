@@ -1,8 +1,7 @@
 # Tido — Todo List MCP for LLM Agents
 
-> ⚠️ **v1 实际形态 = Skill-only**。项目最终决定以 Cursor/Claude Skill 形式交付，数据以 markdown 文件存储（详见 [`skill/SKILL.md`](skill/SKILL.md)）。
-> 本文档下文 §3 ~ §8 关于 SQLite schema、PRAGMA、Go 项目结构、MCP 工具集 的部分**仅作未来可能演进为 MCP server 的参考设计**，v1 不实现。
-
+> **v1 形态 = MCP server + Skill**。Go 实现的 MCP server 提供 7 个 todo 工具（数据存 SQLite），配套 `skill/SKILL.md` 教 agent 何时/如何使用这些工具。机械性事务（并发、原子性、查询）由代码保证，语义判断（何时用哪个工具）由 Skill 引导。
+>
 > 一句话：给 LLM/Agent 提供高性能、低 context 占用的 todo list MCP server，单机本地存储，支持多 agent 并发，多格式写入。
 
 ---
