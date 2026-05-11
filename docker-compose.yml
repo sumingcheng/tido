@@ -7,10 +7,10 @@ services:
     image: tido:${VERSION:-latest}
     container_name: tido
     restart: unless-stopped
-    # 仅绑 localhost，避免误暴公网；要远程走反代/Tailscale
-    # 主机端口可用 TIDO_PORT 改写（默认 8080）
+    # host 端口默认只绑 127.0.0.1，避免误暴公网；本机 Cursor 走这个
+    # TIDO_BIND / TIDO_PORT 可在 .env 覆盖
     ports:
-      - "127.0.0.1:${TIDO_PORT:-8080}:8080"
+      - "${TIDO_BIND:-127.0.0.1}:${TIDO_PORT:-18080}:8080"
     environment:
       # 必填：bearer token；不设会拒绝启动
       TIDO_TOKEN: ${TIDO_TOKEN:?TIDO_TOKEN must be set in .env}
@@ -18,6 +18,16 @@ services:
     # 备份：docker run --rm -v tido-data:/data -v $PWD:/backup alpine tar czf /backup/tido.tgz -C /data .
     volumes:
       - tido-data:/data
+    # 同时挂入 default 与 mcp-net；别的容器加入 mcp-net 即可用 http://tido:8080/mcp 访问
+    networks:
+      - default
+      - mcp-net
 
 volumes:
   tido-data:
+
+networks:
+  # 跨 compose project 的共享网络；先在 host 上 docker network create mcp-net
+  mcp-net:
+    external: true
+    name: mcp-net
