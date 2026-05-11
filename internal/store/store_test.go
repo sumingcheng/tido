@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-func TestNewMemory_SchemaInitialized(t *testing.T) {
+func TestNewFile_SchemaInitialized(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ":memory:")
+	s := newTestStore(t)
 
 	tables := []string{"meta", "todos", "notes", "deletions"}
 	for _, name := range tables {
@@ -30,12 +30,13 @@ func TestNewMemory_SchemaInitialized(t *testing.T) {
 	}
 }
 
-func TestNewMemory_PragmasApplied(t *testing.T) {
+func TestNewFile_PragmasApplied(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ":memory:")
+	s := newTestStore(t)
 
+	// 文件 db 才能启用 WAL；多连接共享同一个 file → 也是生产路径
 	cases := map[string]string{
-		"journal_mode":       "memory", // 内存库下 WAL 不可用，会回退；文件库测见下
+		"journal_mode":       "wal",
 		"synchronous":        "1",
 		"foreign_keys":       "1",
 		"recursive_triggers": "1",
@@ -51,23 +52,9 @@ func TestNewMemory_PragmasApplied(t *testing.T) {
 	}
 }
 
-func TestNewFile_WALEnabled(t *testing.T) {
-	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "wal.db")
-	s := newTestStore(t, dbPath)
-
-	var mode string
-	if err := s.DB().QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode); err != nil {
-		t.Fatalf("read journal_mode: %v", err)
-	}
-	if mode != "wal" {
-		t.Errorf("journal_mode = %q on file db, want wal", mode)
-	}
-}
-
 func TestMetaSeeded(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ":memory:")
+	s := newTestStore(t)
 
 	for _, key := range []string{"last_id", "version"} {
 		var v int
@@ -87,7 +74,10 @@ func TestMigrate_Idempotent(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "idem.db")
 
-	s1 := newTestStore(t, dbPath)
+	s1, err := New(ctx, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s1.DB().ExecContext(ctx,
 		`UPDATE meta SET value = 42 WHERE key = 'version'`); err != nil {
 		t.Fatalf("seed version: %v", err)
@@ -96,11 +86,14 @@ func TestMigrate_Idempotent(t *testing.T) {
 		t.Fatalf("close s1: %v", err)
 	}
 
-	s2 := newTestStore(t, dbPath)
+	s2, err := New(ctx, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer s2.Close()
 
 	var v int
-	err := s2.DB().QueryRowContext(ctx,
+	err = s2.DB().QueryRowContext(ctx,
 		`SELECT value FROM meta WHERE key = 'version'`).Scan(&v)
 	if err != nil {
 		t.Fatalf("read version after reopen: %v", err)
@@ -114,7 +107,10 @@ func TestMigrate_RejectFutureVersion(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "future.db")
 
-	s := newTestStore(t, dbPath)
+	s, err := New(ctx, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.DB().ExecContext(ctx, "PRAGMA user_version = 999"); err != nil {
 		t.Fatalf("force future version: %v", err)
 	}
@@ -125,12 +121,14 @@ func TestMigrate_RejectFutureVersion(t *testing.T) {
 	}
 }
 
-// newTestStore 构造测试 Store，t.Cleanup 自动关连接。
-func newTestStore(t *testing.T, path string) *Store {
+// newTestStore 用临时文件 db 构造 Store。
+// 不用 :memory:，因为 sql.DB 连接池下每个 :memory: 连接是独立 db，跨连接读不到对方数据。
+func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	s, err := New(context.Background(), path)
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, err := New(context.Background(), dbPath)
 	if err != nil {
-		t.Fatalf("New(%s): %v", path, err)
+		t.Fatalf("New(%s): %v", dbPath, err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return s
