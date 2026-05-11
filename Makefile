@@ -1,4 +1,4 @@
-.PHONY: build run test clean install fmt vet tidy
+.PHONY: build run test clean install fmt vet tidy docker-build docker-up docker-down docker-logs
 
 BIN := bin
 SRC := ./cmd/tido
@@ -30,3 +30,19 @@ vet:
 
 tidy:
 	go mod tidy
+
+# 兼容 v2 plugin (`docker compose`) 与 v1 独立 binary (`docker-compose`)
+COMPOSE := $(shell command -v docker-compose >/dev/null 2>&1 && echo docker-compose || echo "docker compose")
+
+docker-build:
+	$(COMPOSE) build
+
+docker-up:
+	@test -f .env || (echo "missing .env (cp .env.example .env 后填 TIDO_TOKEN)" && exit 1)
+	$(COMPOSE) up -d
+
+docker-down:
+	$(COMPOSE) down
+
+docker-logs:
+	$(COMPOSE) logs -f tido

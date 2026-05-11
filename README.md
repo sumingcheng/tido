@@ -28,28 +28,67 @@ make build     # 输出到 ./bin/tido
 
 依赖：Go 1.25+。SQLite 用纯 Go 驱动 `modernc.org/sqlite`，**无需 CGO**。
 
-## 配置 MCP 客户端
+## 部署形态
 
-数据库默认存放在 `~/.tido/todos.db`，可用 `TIDO_HOME` 覆盖。
+tido 一份 binary 支持两种 transport：
 
-### Claude Desktop / Cursor
+| 模式 | 启动 | 适用场景 |
+| --- | --- | --- |
+| **stdio**（默认） | `tido` | 本地单机；MCP client 直接 spawn 子进程 |
+| **HTTP** | `tido -http :8080` | 容器化、远程访问；需要 `TIDO_TOKEN` env |
 
-在 MCP 配置里加：
+### 方式 1：本地 stdio（最简单）
 
+数据库默认存在 `~/.tido/todos.db`，可用 `TIDO_HOME` 覆盖。
+
+Claude Desktop / Cursor 的 MCP 配置：
+```json
+{
+  "mcpServers": {
+    "tido": { "command": "/path/to/tido" }
+  }
+}
+```
+
+### 方式 2：Docker 部署（HTTP transport，本机端口）
+
+```bash
+cp .env.example .env
+# 编辑 .env：把 TIDO_TOKEN 改成强随机串（openssl rand -hex 32）
+make docker-up         # docker-compose up -d
+make docker-logs       # 看启动日志
+```
+
+镜像约 14 MB（distroless static + 静态链接的 Go binary），nonroot 运行，db 落在 named volume `tido_tido-data`。
+
+Cursor 配置切换为 HTTP transport：
 ```json
 {
   "mcpServers": {
     "tido": {
-      "command": "/path/to/tido",
-      "env": {
-        "TIDO_HOME": "/Users/you/.tido"
-      }
+      "url": "http://127.0.0.1:8080/mcp",
+      "headers": { "Authorization": "Bearer <你的 TIDO_TOKEN>" }
     }
   }
 }
 ```
 
-### 验证连通
+端口冲突时改 `.env` 里的 `TIDO_PORT`，对应 Cursor URL 也改。
+
+#### 备份 named volume
+
+```bash
+docker run --rm -v tido_tido-data:/data -v $PWD:/backup alpine \
+  tar czf /backup/tido-$(date +%F).tgz -C /data .
+```
+
+#### 安全提示
+
+- HTTP 模式启动时若 `TIDO_TOKEN` 为空，server 拒绝启动（避免裸奔）
+- 默认只绑回环 `127.0.0.1`，不暴公网
+- 要远程访问：上 Tailscale/WireGuard，或在前面挂 caddy/nginx 做 TLS
+
+### 验证连通（stdio）
 
 ```bash
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"x","version":"0"}}}
@@ -62,9 +101,12 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 ## 开发
 
 ```bash
-make test          # 全量单元 + 集成测试（含 -race）
-make build         # 编译二进制
-make fmt vet tidy  # 代码格式化 / vet / 依赖整理
+make test            # 全量单元 + 集成测试（含 -race）
+make build           # 编译二进制
+make fmt vet tidy    # 代码格式化 / vet / 依赖整理
+make docker-build    # 构建 docker 镜像
+make docker-up/down  # docker compose 起/停
+make docker-logs     # 看容器日志
 ```
 
 测试覆盖：

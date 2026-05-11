@@ -1,12 +1,16 @@
-// Tido MCP server：给 LLM/Agent 提供本地 todo list 工具集（stdio 传输）。
+// Tido MCP server：给 LLM/Agent 提供本地 todo list 工具集。
+// 默认 stdio transport；传 -http <addr> 切到 Streamable HTTP transport（需要 TIDO_TOKEN）。
 package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -38,7 +42,11 @@ func ping(_ context.Context, _ *mcpsdk.CallToolRequest, _ pingArgs) (*mcpsdk.Cal
 }
 
 func main() {
-	ctx := context.Background()
+	httpAddr := flag.String("http", "", "HTTP listen addr (e.g. ':8080'); 留空 = stdio 模式")
+	flag.Parse()
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	dbPath, err := resolveDBPath()
 	if err != nil {
@@ -62,9 +70,17 @@ func main() {
 
 	mcph.Register(server, mcph.NewService(st, nil))
 
-	if err := server.Run(ctx, &mcpsdk.StdioTransport{}); err != nil {
-		log.Printf("tido server exited: %v", err)
-		os.Exit(1)
+	switch *httpAddr {
+	case "":
+		if err := server.Run(ctx, &mcpsdk.StdioTransport{}); err != nil {
+			log.Printf("stdio server exited: %v", err)
+			os.Exit(1)
+		}
+	default:
+		if err := runHTTPServer(ctx, server, *httpAddr, os.Getenv("TIDO_TOKEN")); err != nil {
+			log.Printf("http server exited: %v", err)
+			os.Exit(1)
+		}
 	}
 }
 

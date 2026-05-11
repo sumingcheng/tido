@@ -1,0 +1,23 @@
+services:
+  tido:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-docker}
+    image: tido:${VERSION:-latest}
+    container_name: tido
+    restart: unless-stopped
+    # 仅绑 localhost，避免误暴公网；要远程走反代/Tailscale
+    # 主机端口可用 TIDO_PORT 改写（默认 8080）
+    ports:
+      - "127.0.0.1:${TIDO_PORT:-8080}:8080"
+    environment:
+      # 必填：bearer token；不设会拒绝启动
+      TIDO_TOKEN: ${TIDO_TOKEN:?TIDO_TOKEN must be set in .env}
+    # named volume：docker 自管权限，不踩 host UID 不匹配的坑
+    # 备份：docker run --rm -v tido-data:/data -v $PWD:/backup alpine tar czf /backup/tido.tgz -C /data .
+    volumes:
+      - tido-data:/data
+
+volumes:
+  tido-data:

@@ -18,3 +18,6 @@ coverage.txt
 
 .cache/
 tmp/
+
+.env
+/data/
