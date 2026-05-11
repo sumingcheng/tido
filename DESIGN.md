@@ -249,7 +249,7 @@ MCP 工具失败时通过 `isError: true` + 结构化 payload 返回，code 取�
 
 | 格式 | 识别规则 | 解析方式 |
 |---|---|---|
-| **Markdown checklist** | 任一非空行匹配 `^\s*-\s+\[[ x\-~]\]\s+` | 正则 `^(\s*)-\s+\[([ x\-~])\]\s+(.+)$`；状态映射：` `→pending, `x`→completed, `-`/`~`→in_progress；**缩进每 2 空格 = 下一级父子**，任意深度 |
+| **Markdown checklist** | 任一非空行匹配 `^\s*-\s+\[[ x\-~]\]\s+` | 正则 `^(\s*)-\s+\[([ x\-~])\]\s+(.+)$`；状态映射：` `→pending、`x`→completed、`-`→in_progress、`~`→cancelled；**缩进每 2 空格 = 下一级父子**，任意深度 |
 | **纯文本** | 其他 | 按 `\n` 分割，非空行即一个 pending todo（无父子） |
 
 最终归一化为内部数组 `[{content, status, depth}, ...]`，`depth` 用于在 batch 内构建父子树。`todo_write` 入参 `parent_id` 作为整个 batch 的根父任务（不传则顶层节点 `parent_id=NULL`）。
