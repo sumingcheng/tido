@@ -1,0 +1,24 @@
+# golangci-lint v1.64.5 配置（保守集，避免一上来就一堆 warning 淹没 PR）
+run:
+  timeout: 5m
+  go: "1.25"
+
+linters:
+  # default 已包含：errcheck / gosimple / govet / ineffassign / staticcheck / unused
+  enable:
+    - misspell
+    - unconvert
+
+linters-settings:
+  errcheck:
+    check-type-assertions: false
+    check-blank: false
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    # 测试文件放宽 errcheck，避免每个 defer rows.Close() 都要包 _ =
+    - path: _test\.go
+      linters:
+        - errcheck

@@ -58,7 +58,7 @@ func errResult[T any](err error) (*mcpsdk.CallToolResult, T, error) {
 // summary 给人/agent 一眼看懂；result 给程序解析。
 func okResult[T any](summary string, result T) (*mcpsdk.CallToolResult, T, error) {
 	return &mcpsdk.CallToolResult{
-		Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: summary}},
+		Content:           []mcpsdk.Content{&mcpsdk.TextContent{Text: summary}},
 		StructuredContent: result,
 	}, result, nil
 }

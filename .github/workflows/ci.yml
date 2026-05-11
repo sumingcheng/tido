@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# 同分支多次推送只跑最新一次
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt check
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then
+            echo "::error::gofmt 未格式化的文件："
+            echo "$out"
+            echo "--- diff ---"
+            gofmt -d .
+            exit 1
+          fi
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.5
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go test (race + cover)
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+
+      - name: coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go build
+        run: go build -ldflags "-s -w" -o /tmp/tido ./cmd/tido
+
+  tidy:
+    name: tidy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go mod tidy
+        run: go mod tidy
+
+      - name: 检查 go.mod / go.sum 是否同步
+        run: |
+          if ! git diff --exit-code go.mod go.sum; then
+            echo "::error::go.mod / go.sum 未同步，请本地执行 go mod tidy 后再提交"
+            exit 1
+          fi
+
+  docker:
+    name: docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: docker build (smoke, 不推送)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: false
+          tags: tido:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
