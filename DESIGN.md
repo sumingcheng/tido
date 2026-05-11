@@ -416,8 +416,8 @@ tido/
 │   │   └── normalize.go          # 换行规范化、trim
 │   ├── view/                     # 输出渲染（compact / full / diff）
 │   └── mcp/                      # MCP tool handler
-│       ├── server.go
-│       └── tools.go              # 7 个 tool 的 handler
+│       ├── server.go             # New + RegisterTools + Run
+│       └── tools.go              # 7 个 tool 的 handler（args struct + 复杂 schema patch）
 ├── skill/
 │   └── SKILL.md                  # 给 agent 的使用指引
 ├── go.mod
@@ -500,6 +500,118 @@ tido/
 - 单元测试覆盖 store / parser / validate / shortid
 - 端到端测试覆盖 MCP handshake + 7 个工具的正常路径与错误路径
 - 并发压测作为 CI 必需任务（见上）
+
+---
+
+## 12. 实现细节决策（开工前固化）
+
+### 12.1 MCP SDK 版本策略
+
+- 锁定 `github.com/modelcontextprotocol/go-sdk` 当前最新 stable tag（写入 `go.mod`），不跟主线
+- 升级 SDK 须作为独立 PR 评审，CI 跑全部 e2e 通过才合并
+
+### 12.2 inputSchema 设计（用 SDK 自动推导，非手写 JSON）
+
+调研 `go-sdk@v1.6.0` 后采用其推荐方式：**每个工具定义一个 Go struct，用 `mcp.AddTool` 泛型从 struct + `jsonschema` tag 自动生成 schema**。简单字段直接 tag 描述，复杂约束（enum / pattern / default）用 `jsonschema.For[T](nil)` 生成后手工 patch。
+
+```go
+type writeArgs struct {
+    Items      string `json:"items"                 jsonschema:"markdown checklist 或纯文本，每行一个任务"`
+    Scope      string `json:"scope,omitempty"       jsonschema:"scope 名称，默认 default"`
+    ParentID   string `json:"parent_id,omitempty"   jsonschema:"挂载到已有父任务 id"`
+    Priority   string `json:"priority,omitempty"    jsonschema:"low|medium|high|urgent，默认 medium"`
+    Difficulty string `json:"difficulty,omitempty"  jsonschema:"trivial|easy|medium|hard，默认 medium"`
+    DueAt      any    `json:"due_at,omitempty"      jsonschema:"ISO8601 字符串或 unix ms 整数，见 §12.4"`
+}
+
+// 复杂约束 patch 示例
+schema, _ := jsonschema.For[writeArgs](nil)
+schema.Properties["scope"].Pattern    = `^[a-zA-Z0-9_./:-]{1,64}$`
+schema.Properties["scope"].Default    = json.RawMessage(`"default"`)
+schema.Properties["priority"].Enum    = []any{"low","medium","high","urgent"}
+schema.Properties["priority"].Default = json.RawMessage(`"medium"`)
+// ...
+mcp.AddTool(server, &mcp.Tool{Name: "todo_write", InputSchema: schema, Description: "..."}, todoWrite)
+```
+
+**好处**：
+- 类型安全：handler 直接拿到强类型 args，无需 unmarshal map
+- 描述紧邻定义：改字段时描述同步改，不会过期
+- 减少冗余：不再需要 `internal/mcp/schemas/*.json` + `go:embed`
+
+**与 §6 字符校验的关系**：schema validate 拦截类型/pattern/enum/length 错误；`internal/validate` 包做语义层兜底校验（UTF-8、NUL 字节、ANSI escape 等 schema 表达不了的）。
+
+### 12.3 错误返回 payload 结构
+
+工具失败时返回 `isError: true` + 以下 JSON payload：
+
+```json
+{
+  "code": "INVALID_INPUT",
+  "message": "due_at 不是合法日期格式",
+  "details": {
+    "field": "due_at",
+    "got": "2025-13-99",
+    "expected": "ISO8601 string or unix ms integer"
+  }
+}
+```
+
+| 字段 | 必填 | 用途 |
+|---|---|---|
+| `code` | ✓ | 错误码枚举（见 §4.5），agent 用此做分支决策 |
+| `message` | ✓ | 人类可读，给用户/调试看 |
+| `details` | 可选 | 结构化补充（field/got/expected/...），定位问题用 |
+
+### 12.4 `due_at` 输入/输出格式
+
+**输入**（自动识别）：
+
+| 格式 | 示例 | 解析 |
+|---|---|---|
+| ISO8601 字符串 | `"2026-01-15T23:59:59Z"` / `"2026-01-15T23:59:59+08:00"` / `"2026-01-15"` | `time.Parse` 多 layout 尝试，缺时区按本地解析后转 UTC |
+| unix ms 整数 | `1768435199000` | 直接用 |
+| `0` | `0` | 表示**清除截止**（仅 `todo_update` 语义） |
+| `null` / 不传 | — | 不变更（update）/ 默认无截止（write） |
+
+**db 存储**：unix ms 整数。
+
+**输出**（list / diff）：统一 ISO8601 UTC 字符串：
+
+```json
+"due_at": "2026-01-15T23:59:59Z"
+```
+
+理由：agent 写入要自然（ISO8601 友好），输出要稳定可解析（统一 UTC 避免时区歧义）。
+
+### 12.5 compact view 相对时间格式
+
+`due_at` 在 compact view 渲染为相对时间标记 `@<delta>`：
+
+| 距现在 | 渲染 | 备注 |
+|---|---|---|
+| 已逾期 ≥ 1h | `@overdue` | 不显示具体小时数（避免 token 浪费） |
+| 已逾期 < 1h | `@<1h overdue` | 紧迫提示 |
+| 0 ~ 1h | `@<1h` | 即将到期 |
+| 1h ~ 24h | `@3h` | 取整小时（向下） |
+| 1d ~ 7d | `@2d` | 取整天 |
+| 1w ~ 4w | `@2w` | 取整周 |
+| ≥ 4w | `@1mo` | 取整月（30 天） |
+
+**时区**：按 server 进程的本地时区计算"今天"边界。db 存 UTC，渲染时按 `time.Local` 转换。
+
+### 12.6 测试 db 策略
+
+- 单元测试：`:memory:` SQLite，每个测试独立 db handle
+- 端到端测试：`tmpdir/test-<uuid>.db`，测试结束 cleanup
+- 并发压测：`tmpdir/stress.db`，3 个进程 × 60s
+
+### 12.7 日志策略
+
+- 写 stderr（stdout 留给 MCP 协议）
+- 默认 level = `info`，可由 `TIDO_LOG_LEVEL` 环境变量调整（`debug` / `info` / `warn` / `error`）
+- 格式：`<时间> <level> <message> key=value ...`，单行 logfmt 风格
+- 工具调用必记一行：`tool=todo_write scope=default items_count=3 took=2ms`
 
 ---
 
