@@ -13,12 +13,12 @@ import (
 
 // TodoWriteArgs 是 todo_write 的入参。
 type TodoWriteArgs struct {
-	Items      string `json:"items" jsonschema:"待办内容；markdown checklist 或纯文本（每行一条）。markdown 缩进 2 空格 = 父子。"`
-	Scope      string `json:"scope,omitempty" jsonschema:"工作域，省略=default。仅同 scope 内 diff/list 互通。"`
-	ParentID   string `json:"parent_id,omitempty" jsonschema:"挂载到此父任务下；省略=本批为顶层任务。"`
-	Priority   string `json:"priority,omitempty" jsonschema:"low | medium | high | urgent，省略=medium。"`
-	Difficulty string `json:"difficulty,omitempty" jsonschema:"trivial | easy | medium | hard，省略=medium。"`
-	DueAt      string `json:"due_at,omitempty" jsonschema:"截止时间：unix ms 数字串 或 RFC3339 字符串。省略=无截止。"`
+	Items      string `json:"items" jsonschema:" 待办内容；markdown checklist 或纯文本（每行一条）。markdown 缩进 2 空格 = 父子。"`
+	Scope      string `json:"scope,omitempty" jsonschema:" 工作域，省略=default。仅同 scope 内 diff/list 互通。"`
+	ParentID   string `json:"parent_id,omitempty" jsonschema:" 挂载到此父任务下；省略=本批为顶层任务。"`
+	Priority   string `json:"priority,omitempty" jsonschema:" low | medium | high | urgent，省略=medium。"`
+	Difficulty string `json:"difficulty,omitempty" jsonschema:" trivial | easy | medium | hard，省略=medium。"`
+	DueAt      string `json:"due_at,omitempty" jsonschema:" 截止时间：unix ms 数字串 或 RFC3339 字符串。省略=无截止。"`
 }
 
 // TodoWriteResult 是 todo_write 的返回。

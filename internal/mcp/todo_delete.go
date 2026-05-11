@@ -12,8 +12,8 @@ import (
 // TodoDeleteArgs 是 todo_delete 的入参。
 // IDs 与 Scope 互斥：必须传其中之一。
 type TodoDeleteArgs struct {
-	IDs   []string `json:"ids,omitempty" jsonschema:"按短码批量删除；与 scope 互斥。"`
-	Scope string   `json:"scope,omitempty" jsonschema:"按工作域整体清空；与 ids 互斥。"`
+	IDs   []string `json:"ids,omitempty" jsonschema:" 按短码批量删除；与 scope 互斥。"`
+	Scope string   `json:"scope,omitempty" jsonschema:" 按工作域整体清空；与 ids 互斥。"`
 }
 
 // TodoDeleteResult 是 todo_delete 的返回。

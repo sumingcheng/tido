@@ -13,13 +13,13 @@ import (
 
 // TodoListArgs 是 todo_list 的入参。
 type TodoListArgs struct {
-	Scope    string `json:"scope,omitempty" jsonschema:"工作域，省略=default。"`
-	Status   string `json:"status,omitempty" jsonschema:"按状态过滤：pending | in_progress | completed | cancelled。省略=不过滤。"`
-	ParentID string `json:"parent_id,omitempty" jsonschema:"按父任务过滤；传 'root' 仅顶层；省略=不过滤。"`
-	View     string `json:"view,omitempty" jsonschema:"compact (省元字段+相对时间) | full。省略=compact。"`
-	Sort     string `json:"sort,omitempty" jsonschema:"created | priority | due。省略=created。"`
-	Limit    int    `json:"limit,omitempty" jsonschema:"≤500，省略=100。"`
-	Offset   int    `json:"offset,omitempty" jsonschema:"分页偏移；省略=0。"`
+	Scope    string `json:"scope,omitempty" jsonschema:" 工作域，省略=default。"`
+	Status   string `json:"status,omitempty" jsonschema:" 按状态过滤：pending | in_progress | completed | cancelled。省略=不过滤。"`
+	ParentID string `json:"parent_id,omitempty" jsonschema:" 按父任务过滤；传 'root' 仅顶层；省略=不过滤。"`
+	View     string `json:"view,omitempty" jsonschema:" compact (省元字段+相对时间) | full。省略=compact。"`
+	Sort     string `json:"sort,omitempty" jsonschema:" created | priority | due。省略=created。"`
+	Limit    int    `json:"limit,omitempty" jsonschema:" ≤500，省略=100。"`
+	Offset   int    `json:"offset,omitempty" jsonschema:" 分页偏移；省略=0。"`
 }
 
 // TodoListResult 是 todo_list 的返回。

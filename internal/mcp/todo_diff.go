@@ -12,9 +12,9 @@ import (
 
 // TodoDiffArgs 是 todo_diff 的入参。
 type TodoDiffArgs struct {
-	Scope string `json:"scope,omitempty" jsonschema:"工作域，省略=default。"`
-	Since int64  `json:"since" jsonschema:"上次拿到的 next_cursor；首次传 0。"`
-	Limit int    `json:"limit,omitempty" jsonschema:"≤200，省略=50。"`
+	Scope string `json:"scope,omitempty" jsonschema:" 工作域，省略=default。"`
+	Since int64  `json:"since" jsonschema:" 上次拿到的 next_cursor；首次传 0。"`
+	Limit int    `json:"limit,omitempty" jsonschema:" ≤200，省略=50。"`
 }
 
 // TodoDiffResult 是 todo_diff 的返回。

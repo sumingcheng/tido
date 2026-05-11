@@ -23,8 +23,8 @@ const dbFileName = "todos.db"
 type pingArgs struct{}
 
 type pingResult struct {
-	Pong    string `json:"pong"    jsonschema:"固定 pong 字符串"`
-	Version string `json:"version" jsonschema:"tido 二进制版本"`
+	Pong    string `json:"pong"    jsonschema:" 固定 pong 字符串"`
+	Version string `json:"version" jsonschema:" tido 二进制版本"`
 }
 
 func ping(_ context.Context, _ *mcpsdk.CallToolRequest, _ pingArgs) (*mcpsdk.CallToolResult, pingResult, error) {

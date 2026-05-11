@@ -12,9 +12,9 @@ import (
 
 // TodoGetNotesArgs 是 todo_get_notes 的入参。
 type TodoGetNotesArgs struct {
-	TodoID string `json:"todo_id" jsonschema:"目标 todo 短码。"`
-	Limit  int    `json:"limit,omitempty" jsonschema:"≤100，省略=20。"`
-	Offset int    `json:"offset,omitempty" jsonschema:"分页偏移；省略=0。"`
+	TodoID string `json:"todo_id" jsonschema:" 目标 todo 短码。"`
+	Limit  int    `json:"limit,omitempty" jsonschema:" ≤100，省略=20。"`
+	Offset int    `json:"offset,omitempty" jsonschema:" 分页偏移；省略=0。"`
 }
 
 // TodoGetNotesResult 是 todo_get_notes 的返回。

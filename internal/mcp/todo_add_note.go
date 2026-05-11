@@ -11,8 +11,8 @@ import (
 
 // TodoAddNoteArgs 是 todo_add_note 的入参。
 type TodoAddNoteArgs struct {
-	TodoID  string `json:"todo_id" jsonschema:"目标 todo 短码。"`
-	Content string `json:"content" jsonschema:"笔记内容；≤ 8 KiB。"`
+	TodoID  string `json:"todo_id" jsonschema:" 目标 todo 短码。"`
+	Content string `json:"content" jsonschema:" 笔记内容；≤ 8 KiB。"`
 }
 
 // TodoAddNoteResult 是 todo_add_note 的返回。
