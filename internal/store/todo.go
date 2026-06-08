@@ -31,11 +31,27 @@ type InsertOptions struct {
 	NowMs        int64  // created_at = updated_at
 }
 
+// InsertResult 是一次批量写入的完整结果。
+type InsertResult struct {
+	IDs    []string
+	Items  []Todo
+	Cursor int64
+}
+
 // InsertBatch 在一个事务内批量插入 items（含父子关系），返回新生成的短码 ids（与 items 一一对应）。
 // items 须按 parser DFS 序排列（parent → child 自然成立）。
 func (s *Store) InsertBatch(ctx context.Context, items []parser.Item, opts InsertOptions) ([]string, error) {
+	res, err := s.InsertBatchDetailed(ctx, items, opts)
+	if err != nil {
+		return nil, err
+	}
+	return res.IDs, nil
+}
+
+// InsertBatchDetailed 在一个事务内批量插入，并返回本次写入的 cursor 与 compact 所需实体。
+func (s *Store) InsertBatchDetailed(ctx context.Context, items []parser.Item, opts InsertOptions) (*InsertResult, error) {
 	if len(items) == 0 {
-		return nil, nil
+		return &InsertResult{}, nil
 	}
 	tx, err := s.BeginImmediate(ctx)
 	if err != nil {
@@ -66,10 +82,11 @@ func (s *Store) InsertBatch(ctx context.Context, items []parser.Item, opts Inser
 	if err := batchInsertTodos(ctx, tx, items, ids, parents, opts, ver); err != nil {
 		return nil, err
 	}
+	todos := buildInsertedTodos(items, ids, parents, opts, ver)
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return ids, nil
+	return &InsertResult{IDs: ids, Items: todos, Cursor: ver}, nil
 }
 
 // resolveParents 用 lastByDepth 字典在 batch 内解析父子关系。
@@ -131,11 +148,37 @@ func batchInsertTodos(ctx context.Context, tx *sql.Tx, items []parser.Item,
 	return err
 }
 
+func buildInsertedTodos(items []parser.Item, ids []string, parents []*string, opts InsertOptions, ver int64) []Todo {
+	out := make([]Todo, len(items))
+	for i, it := range items {
+		status := it.Status
+		if status == "" {
+			status = string(StatusPending)
+		}
+		out[i] = Todo{
+			ID:         ids[i],
+			Scope:      opts.Scope,
+			Content:    it.Content,
+			Status:     Status(status),
+			Priority:   opts.Priority,
+			Difficulty: opts.Difficulty,
+			DueAt:      opts.DueAt,
+			ParentID:   parents[i],
+			Version:    ver,
+			CreatedAt:  opts.NowMs,
+			UpdatedAt:  opts.NowMs,
+		}
+	}
+	return out
+}
+
 // ListOptions 是 List 的过滤/排序/分页参数。
 type ListOptions struct {
 	Scope    string
-	Status   Status  // 空 = 不过滤
-	ParentID *string // nil = 不过滤；指向 "" = 仅顶层 (IS NULL)；其他 = = 值
+	Status   Status   // 空 = 不过滤；兼容旧调用，优先级低于 Statuses
+	Statuses []Status // nil/空 = 不过滤；多状态用 IN
+	IDs      []string // nil/空 = 不按 id 过滤
+	ParentID *string  // nil = 不过滤；指向 "" = 仅顶层 (IS NULL)；其他 = = 值
 	Sort     SortOrder
 	Limit    int // ≤ 500，默认 100
 	Offset   int
@@ -144,8 +187,10 @@ type ListOptions struct {
 // ListResult 包含分页元信息。
 type ListResult struct {
 	Items   []Todo
-	Total   int  // 满足过滤的总数（不受 Limit/Offset 影响）
-	HasMore bool // 还有下一页
+	Total   int          // 满足过滤的总数（不受 Limit/Offset 影响）
+	HasMore bool         // 还有下一页
+	Cursor  int64        // 查询前的全局 version；后续 diff 从这里继续，不漏变更
+	Counts  StatusCounts // 同 scope/parent/id 范围内的状态计数，不受 Status/Statuses 影响
 }
 
 // List 按过滤条件返回 todos（含 NotesCount）。
@@ -155,6 +200,15 @@ func (s *Store) List(ctx context.Context, opts ListOptions) (*ListResult, error)
 	}
 	if opts.Limit > 500 {
 		opts.Limit = 500
+	}
+
+	cursor, err := s.currentVersion(ctx)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := s.countByStatus(ctx, opts)
+	if err != nil {
+		return nil, err
 	}
 
 	where, whereArgs := buildListWhere(opts)
@@ -187,17 +241,38 @@ SELECT id, scope, content, status, priority, difficulty, due_at, parent_id,
 		Items:   items,
 		Total:   total,
 		HasMore: opts.Offset+len(items) < total,
+		Cursor:  cursor,
+		Counts:  counts,
 	}, nil
 }
 
 // buildListWhere 拼出 WHERE 子句与参数。
 func buildListWhere(opts ListOptions) (string, []any) {
+	clauses, args := buildListBaseWhere(opts)
+	statuses := effectiveStatuses(opts)
+	switch len(statuses) {
+	case 0:
+	case 1:
+		clauses = append(clauses, "status = ?")
+		args = append(args, string(statuses[0]))
+	default:
+		clauses = append(clauses, "status IN ("+placeholders(len(statuses))+")")
+		for _, st := range statuses {
+			args = append(args, string(st))
+		}
+	}
+	return "WHERE " + strings.Join(clauses, " AND "), args
+}
+
+func buildListBaseWhere(opts ListOptions) ([]string, []any) {
 	clauses := []string{"scope = ?"}
 	args := []any{opts.Scope}
 
-	if opts.Status != "" {
-		clauses = append(clauses, "status = ?")
-		args = append(args, string(opts.Status))
+	if len(opts.IDs) > 0 {
+		clauses = append(clauses, "id IN ("+placeholders(len(opts.IDs))+")")
+		for _, id := range opts.IDs {
+			args = append(args, id)
+		}
 	}
 	if opts.ParentID != nil {
 		switch *opts.ParentID {
@@ -208,7 +283,47 @@ func buildListWhere(opts ListOptions) (string, []any) {
 			args = append(args, *opts.ParentID)
 		}
 	}
-	return "WHERE " + strings.Join(clauses, " AND "), args
+	return clauses, args
+}
+
+func effectiveStatuses(opts ListOptions) []Status {
+	if len(opts.Statuses) > 0 {
+		return opts.Statuses
+	}
+	if opts.Status != "" {
+		return []Status{opts.Status}
+	}
+	return nil
+}
+
+func (s *Store) countByStatus(ctx context.Context, opts ListOptions) (StatusCounts, error) {
+	clauses, args := buildListBaseWhere(opts)
+	where := "WHERE " + strings.Join(clauses, " AND ")
+	rows, err := s.db.QueryContext(ctx, "SELECT status, COUNT(*) FROM todos "+where+" GROUP BY status", args...)
+	if err != nil {
+		return StatusCounts{}, fmt.Errorf("count by status: %w", err)
+	}
+	defer rows.Close()
+
+	var counts StatusCounts
+	for rows.Next() {
+		var status Status
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return StatusCounts{}, err
+		}
+		switch status {
+		case StatusPending:
+			counts.Pending = count
+		case StatusInProgress:
+			counts.InProgress = count
+		case StatusCompleted:
+			counts.Completed = count
+		case StatusCancelled:
+			counts.Cancelled = count
+		}
+	}
+	return counts, rows.Err()
 }
 
 // buildOrderBy 按 sort 选择 ORDER BY 子句（DESIGN.md §4.4）。
@@ -237,25 +352,37 @@ type UpdateFields struct {
 	DueAt      *int64
 }
 
+// UpdateResult 是一次单条更新的完整结果。
+type UpdateResult struct {
+	Item   Todo
+	Cursor int64
+}
+
 // Update 修改单条 todo；至少传一个字段；id 不存在返回 ErrNotFound。
 func (s *Store) Update(ctx context.Context, id string, f UpdateFields, nowMs int64) error {
+	_, err := s.UpdateDetailed(ctx, id, f, nowMs)
+	return err
+}
+
+// UpdateDetailed 修改单条 todo，并返回更新后的实体与本次写入 cursor。
+func (s *Store) UpdateDetailed(ctx context.Context, id string, f UpdateFields, nowMs int64) (*UpdateResult, error) {
 	sets, args := buildUpdateSets(f)
 	if len(sets) == 0 {
-		return ErrEmptyUpdate
+		return nil, ErrEmptyUpdate
 	}
 
 	tx, err := s.BeginImmediate(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	if err := assertTodoExists(ctx, tx, id); err != nil {
-		return err
+		return nil, err
 	}
 	ver, err := nextVersion(ctx, tx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	sets = append(sets, "version = ?", "updated_at = ?")
@@ -263,9 +390,16 @@ func (s *Store) Update(ctx context.Context, id string, f UpdateFields, nowMs int
 	q := "UPDATE todos SET " + strings.Join(sets, ", ") + " WHERE id = ?"
 
 	if _, err := tx.ExecContext(ctx, q, args...); err != nil {
-		return fmt.Errorf("update: %w", err)
+		return nil, fmt.Errorf("update: %w", err)
 	}
-	return tx.Commit()
+	item, err := selectTodoByID(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &UpdateResult{Item: item, Cursor: ver}, nil
 }
 
 // buildUpdateSets 把 UpdateFields 翻译为 SQL SET 片段。
@@ -301,10 +435,25 @@ func buildUpdateSets(f UpdateFields) ([]string, []any) {
 	return sets, args
 }
 
+// DeleteResult 是一次删除操作的完整结果。
+type DeleteResult struct {
+	Deleted []string
+	Cursor  int64
+}
+
 // DeleteByIDs 物理删除指定 ids；trigger 自动写 tombstone。返回实际删除的 ids。
 func (s *Store) DeleteByIDs(ctx context.Context, ids []string) ([]string, error) {
+	res, err := s.DeleteByIDsDetailed(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	return res.Deleted, nil
+}
+
+// DeleteByIDsDetailed 物理删除指定 ids，并返回本次写入 cursor。
+func (s *Store) DeleteByIDsDetailed(ctx context.Context, ids []string) (*DeleteResult, error) {
 	if len(ids) == 0 {
-		return nil, nil
+		return &DeleteResult{}, nil
 	}
 	return s.deleteByCondition(ctx,
 		"id IN ("+placeholders(len(ids))+")",
@@ -313,6 +462,15 @@ func (s *Store) DeleteByIDs(ctx context.Context, ids []string) ([]string, error)
 
 // DeleteByScope 物理删除整个 scope 的所有 todos。返回实际删除的 ids。
 func (s *Store) DeleteByScope(ctx context.Context, scope string) ([]string, error) {
+	res, err := s.DeleteByScopeDetailed(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+	return res.Deleted, nil
+}
+
+// DeleteByScopeDetailed 物理删除整个 scope，并返回本次写入 cursor。
+func (s *Store) DeleteByScopeDetailed(ctx context.Context, scope string) (*DeleteResult, error) {
 	if scope == "" {
 		return nil, ErrIDsScopeNeither
 	}
@@ -321,7 +479,7 @@ func (s *Store) DeleteByScope(ctx context.Context, scope string) ([]string, erro
 
 // deleteByCondition 通用删除入口：先 SELECT 实际命中的 ids，再 +1 version 后 DELETE。
 // 返回的 ids 与 trigger 生成的 deletions 一一对应。
-func (s *Store) deleteByCondition(ctx context.Context, whereCond string, args []any) ([]string, error) {
+func (s *Store) deleteByCondition(ctx context.Context, whereCond string, args []any) (*DeleteResult, error) {
 	tx, err := s.BeginImmediate(ctx)
 	if err != nil {
 		return nil, err
@@ -339,11 +497,15 @@ func (s *Store) deleteByCondition(ctx context.Context, whereCond string, args []
 		return nil, err
 	}
 	if len(deleted) == 0 {
-		return nil, tx.Commit()
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		return &DeleteResult{}, nil
 	}
 
 	// 在 DELETE 前 +1 version，让 trigger 读到最新值并写入 deletions 行
-	if _, err := nextVersion(ctx, tx); err != nil {
+	ver, err := nextVersion(ctx, tx)
+	if err != nil {
 		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, "DELETE FROM todos WHERE "+whereCond, args...); err != nil {
@@ -352,7 +514,7 @@ func (s *Store) deleteByCondition(ctx context.Context, whereCond string, args []
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return deleted, nil
+	return &DeleteResult{Deleted: deleted, Cursor: ver}, nil
 }
 
 // nextVersion 在事务内递增 meta.version 并返回新值。
@@ -424,6 +586,26 @@ func nullableStringPtr(p *string) any {
 		return nil
 	}
 	return *p
+}
+
+func selectTodoByID(ctx context.Context, tx *sql.Tx, id string) (Todo, error) {
+	q := `
+SELECT id, scope, content, status, priority, difficulty, due_at, parent_id,
+       version, created_at, updated_at,
+       (SELECT COUNT(*) FROM notes WHERE notes.todo_id = todos.id) AS notes_count
+  FROM todos WHERE id = ?`
+	rows, err := tx.QueryContext(ctx, q, id)
+	if err != nil {
+		return Todo{}, fmt.Errorf("query todo: %w", err)
+	}
+	items, err := scanTodos(rows)
+	if err != nil {
+		return Todo{}, err
+	}
+	if len(items) == 0 {
+		return Todo{}, fmt.Errorf("%w: %s", ErrNotFound, id)
+	}
+	return items[0], nil
 }
 
 func scanTodos(rows *sql.Rows) ([]Todo, error) {

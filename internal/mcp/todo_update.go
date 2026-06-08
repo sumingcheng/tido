@@ -8,6 +8,7 @@ import (
 
 	"github.com/sumingcheng/tido/internal/store"
 	"github.com/sumingcheng/tido/internal/validate"
+	"github.com/sumingcheng/tido/internal/view"
 )
 
 // TodoUpdateArgs 是 todo_update 的入参。
@@ -24,14 +25,16 @@ type TodoUpdateArgs struct {
 
 // TodoUpdateResult 是 todo_update 的返回。
 type TodoUpdateResult struct {
-	ID string `json:"id"`
-	OK bool   `json:"ok"`
+	ID     string        `json:"id"`
+	OK     bool          `json:"ok"`
+	Cursor int64         `json:"cursor,omitempty"`
+	Item   view.TodoView `json:"item,omitempty"`
 }
 
 func todoUpdateTool() *mcpsdk.Tool {
 	return &mcpsdk.Tool{
 		Name:        "todo_update",
-		Description: "更新单条 todo 的可变字段（status/content/priority/difficulty/due_at）；至少传一个字段。",
+		Description: "更新单条 todo 的可变字段（status/content/priority/difficulty/due_at）；至少传一个字段。返回 cursor 和更新后的 compact item；不要更新后再全量 todo_list。",
 	}
 }
 
@@ -45,12 +48,18 @@ func (s *Service) todoUpdate(ctx context.Context, _ *mcpsdk.CallToolRequest, arg
 		return errResult[TodoUpdateResult](err)
 	}
 
-	if err := s.store.Update(ctx, args.ID, fields, s.now()); err != nil {
+	out, err := s.store.UpdateDetailed(ctx, args.ID, fields, s.now())
+	if err != nil {
 		return errResult[TodoUpdateResult](err)
 	}
 
-	res := TodoUpdateResult{ID: args.ID, OK: true}
-	return okResult(fmt.Sprintf("updated %s", args.ID), res)
+	res := TodoUpdateResult{
+		ID:     args.ID,
+		OK:     true,
+		Cursor: out.Cursor,
+		Item:   view.RenderTodo(out.Item, view.ModeCompact, s.now()),
+	}
+	return okResult(fmt.Sprintf("updated %s (cursor=%d)", args.ID, out.Cursor), res)
 }
 
 // buildUpdateFields 把 args 翻译为 store.UpdateFields；

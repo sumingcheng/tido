@@ -10,6 +10,14 @@ const (
 	StatusCancelled  Status = "cancelled"
 )
 
+// StatusCounts 汇总同一查询范围内各状态的数量。
+type StatusCounts struct {
+	Pending    int `json:"pending"`
+	InProgress int `json:"in_progress"`
+	Completed  int `json:"completed"`
+	Cancelled  int `json:"cancelled"`
+}
+
 // Priority 优先级枚举。
 type Priority string
 

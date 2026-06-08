@@ -40,16 +40,17 @@ todo_write({
   "items": "- [ ] 调研方案\n- [ ] 实现\n  - [ ] 模块 A\n  - [ ] 模块 B\n- [ ] 写测试",
   "priority": "high"
 })
-// → { ids: ["t1","t2","t3","t4","t5"], count: 5 }
+// → { ids: ["t1","t2","t3","t4","t5"], count: 5, cursor: 1, items: [...] }
 ```
 
-记下返回的 `ids`，后续更新/笔记/删除都用短码引用。
+记下返回的 `ids` 和 `cursor`，后续更新/笔记/删除都用短码引用。
 
 ### 2. 推进任务 → 单条更新
 
 ```jsonc
 todo_update({ "id": "t2", "status": "in_progress" })
 todo_update({ "id": "t3", "status": "completed" })
+// → { ok: true, cursor: 2, item: {...} }
 ```
 
 关键决策落到笔记，避免污染 `content`：
@@ -82,7 +83,7 @@ todo_delete({ "scope": "feature-x-rebuild" }) // 整批清空（不可与 ids �
 
 - **id**：`t` + base36，如 `t1`/`t3a`/`tabc`。短，省 token。
 - **scope**：工作域；省略=`default`。用来隔离不同 epic/feature。仅同 scope 内 list/diff 互通。
-- **status**：`pending` / `in_progress` / `completed` / `cancelled`
+- **status**：任务状态是 `pending` / `in_progress` / `completed` / `cancelled`；`todo_list` 还接受查询意图 `active`（pending+in_progress，默认）和 `all`。
 - **priority**：`low` / `medium` / `high` / `urgent`（默认 `medium`）
 - **difficulty**：`trivial` / `easy` / `medium` / `hard`（默认 `medium`）
 - **due_at**：截止时间。**入参**接受 unix ms 数字串或 RFC3339 字符串；**输出**统一 ISO8601（full 视图）或相对时间 `@2d`/`@overdue 1h`（compact 视图）。
@@ -114,12 +115,16 @@ task three
 
 ## 视图模式（todo_list / todo_diff）
 
-- **`view: "compact"`**（默认）：省略 `scope`/`version`/`created_at`/`updated_at`；`due_at` 用相对时间。**给 agent 用，token 最省**。
+- **`todo_list` 默认**：`status: "active"` + `view: "compact"`，只返回 pending/in_progress 明细，同时返回 `counts` 和 `cursor`。要看完成/取消/全部，必须显式传 `status: "completed"` / `"cancelled"` / `"all"`。
+- **按 id 精确查**：`todo_list({ "ids": ["t12"] })`；ids 非空且省略 status 时默认查 all，避免 completed 项查不到。
+- **`view: "compact"`**（默认）：省略 `scope`/`version`/`created_at`/`updated_at`，默认 priority/difficulty 也不返回；`due_at` 用相对时间。**给 agent 用，token 最省**。
 - **`view: "full"`**：所有字段，时间用 ISO8601。审计、迁移、人工排查时用。
 
 ## 反模式
 
-- 每次 update 后立刻 `todo_list` 全表 → **用 `todo_diff`**
+- 每次 update 后立刻 `todo_list` 全表 → **用 mutation 返回的 `item/cursor`，长会话再用 `todo_diff`**
+- 日常展示 completed/cancelled 明细 → **默认只看 active；用户明确要求历史时才显式查 closed**
+- 默认用 `view: "full"` → **只在审计/调试时使用**
 - 把堆栈/错误信息塞进 `content` → **用 `todo_add_note`**
 - 同时传 `ids` 和 `scope` 给 `todo_delete` → **互斥，会报错**
 - 同时传 `due_at` 和 `clear_due_at: true` → **互斥**

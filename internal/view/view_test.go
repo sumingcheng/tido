@@ -38,6 +38,9 @@ func TestRenderTodo_Compact(t *testing.T) {
 	if v.ParentID != "t1" || v.Notes != 2 {
 		t.Errorf("parent/notes lost: %+v", v)
 	}
+	if v.Priority != "high" || v.Difficulty != "" {
+		t.Errorf("compact should keep non-default priority and omit default difficulty; got %+v", v)
+	}
 }
 
 func TestRenderTodo_Full(t *testing.T) {

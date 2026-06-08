@@ -152,6 +152,35 @@ func TestList_FilterByStatus(t *testing.T) {
 	if res.Total != 2 || len(res.Items) != 2 {
 		t.Errorf("total=%d items=%d, want 2/2", res.Total, len(res.Items))
 	}
+	if res.Counts.Pending != 2 || res.Counts.Completed != 1 {
+		t.Errorf("counts = %+v, want pending=2 completed=1", res.Counts)
+	}
+	if res.Cursor == 0 {
+		t.Error("cursor should be set after insert")
+	}
+}
+
+func TestList_FilterByStatusesAndIDs(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	ids, _ := s.InsertBatch(ctx, []parser.Item{
+		{Content: "p1", Status: "pending", Depth: 0},
+		{Content: "i1", Status: "in_progress", Depth: 0},
+		{Content: "d1", Status: "completed", Depth: 0},
+	}, defaultInsertOpts())
+
+	res, err := s.List(ctx, ListOptions{
+		Scope:    "default",
+		IDs:      []string{ids[0], ids[2]},
+		Statuses: []Status{StatusPending, StatusInProgress},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Total != 1 || len(res.Items) != 1 || res.Items[0].ID != ids[0] {
+		t.Errorf("items = %+v total=%d, want only %s", res.Items, res.Total, ids[0])
+	}
 }
 
 func TestList_SortByPriority(t *testing.T) {

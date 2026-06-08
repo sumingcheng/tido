@@ -9,6 +9,7 @@ import (
 	"github.com/sumingcheng/tido/internal/parser"
 	"github.com/sumingcheng/tido/internal/store"
 	"github.com/sumingcheng/tido/internal/validate"
+	"github.com/sumingcheng/tido/internal/view"
 )
 
 // TodoWriteArgs 是 todo_write 的入参。
@@ -23,14 +24,16 @@ type TodoWriteArgs struct {
 
 // TodoWriteResult 是 todo_write 的返回。
 type TodoWriteResult struct {
-	IDs   []string `json:"ids"`
-	Count int      `json:"count"`
+	IDs    []string        `json:"ids"`
+	Count  int             `json:"count"`
+	Cursor int64           `json:"cursor,omitempty"`
+	Items  []view.TodoView `json:"items,omitempty"`
 }
 
 func todoWriteTool() *mcpsdk.Tool {
 	return &mcpsdk.Tool{
 		Name:        "todo_write",
-		Description: "批量写入待办：自动识别 markdown checklist / 纯文本，支持父子层级、优先级、难度、截止时间。返回新生成的短码 ids。",
+		Description: "批量写入待办：自动识别 markdown checklist / 纯文本，支持父子层级、优先级、难度、截止时间。返回新生成的短码 ids、cursor 和 compact items；不要写完后再全量 todo_list。",
 	}
 }
 
@@ -70,7 +73,7 @@ func (s *Service) todoWrite(ctx context.Context, _ *mcpsdk.CallToolRequest, args
 		}
 	}
 
-	ids, err := s.store.InsertBatch(ctx, items, store.InsertOptions{
+	out, err := s.store.InsertBatchDetailed(ctx, items, store.InsertOptions{
 		Scope:        scope,
 		RootParentID: args.ParentID,
 		Priority:     priority,
@@ -82,8 +85,13 @@ func (s *Service) todoWrite(ctx context.Context, _ *mcpsdk.CallToolRequest, args
 		return errResult[TodoWriteResult](err)
 	}
 
-	res := TodoWriteResult{IDs: ids, Count: len(ids)}
-	return okResult(fmt.Sprintf("wrote %d todo(s) into scope %q", len(ids), scope), res)
+	res := TodoWriteResult{
+		IDs:    out.IDs,
+		Count:  len(out.IDs),
+		Cursor: out.Cursor,
+		Items:  view.RenderTodos(out.Items, view.ModeCompact, s.now()),
+	}
+	return okResult(fmt.Sprintf("wrote %d todo(s) into scope %q (cursor=%d)", len(out.IDs), scope, out.Cursor), res)
 }
 
 // normalizePriority 校验并填充默认 priority。

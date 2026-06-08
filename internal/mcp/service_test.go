@@ -27,8 +27,14 @@ func TestTodoWriteThenList(t *testing.T) {
 	lr, _, err := svc.todoList(ctx, nil, TodoListArgs{})
 	requireOK(t, lr, err)
 	res := lr.StructuredContent.(TodoListResult)
-	if res.Total != 3 {
-		t.Errorf("total = %d, want 3", res.Total)
+	if res.Total != 2 {
+		t.Errorf("active total = %d, want 2", res.Total)
+	}
+	if res.Counts.Pending != 1 || res.Counts.InProgress != 1 || res.Counts.Completed != 1 {
+		t.Errorf("counts = %+v, want pending=1 in_progress=1 completed=1", res.Counts)
+	}
+	if res.Cursor == 0 {
+		t.Error("list cursor should be set")
 	}
 	for _, it := range res.Items {
 		if it.Priority != "high" {
@@ -77,8 +83,12 @@ func TestTodoUpdate_StatusAndDue(t *testing.T) {
 		ID: id, Status: "completed", DueAt: "1735689600000",
 	})
 	requireOK(t, ur, err)
+	up := ur.StructuredContent.(TodoUpdateResult)
+	if up.Cursor == 0 || up.Item.ID != id || up.Item.Status != "completed" {
+		t.Errorf("update result = %+v, want cursor and completed item", up)
+	}
 
-	lr, _, _ := svc.todoList(ctx, nil, TodoListArgs{View: "full"})
+	lr, _, _ := svc.todoList(ctx, nil, TodoListArgs{Status: "completed", View: "full"})
 	got := lr.StructuredContent.(TodoListResult).Items[0]
 	if got.Status != "completed" {
 		t.Errorf("status = %s, want completed", got.Status)
@@ -132,6 +142,9 @@ func TestTodoDelete_ByIDs(t *testing.T) {
 	requireOK(t, dr, err)
 	if dr.StructuredContent.(TodoDeleteResult).Count != 2 {
 		t.Errorf("delete count = %d, want 2", dr.StructuredContent.(TodoDeleteResult).Count)
+	}
+	if dr.StructuredContent.(TodoDeleteResult).Cursor == 0 {
+		t.Error("delete cursor should be set")
 	}
 	lr, _, _ := svc.todoList(ctx, nil, TodoListArgs{})
 	if lr.StructuredContent.(TodoListResult).Total != 1 {
@@ -204,6 +217,27 @@ func TestList_ParentRoot(t *testing.T) {
 	requireOK(t, lr, err)
 	if lr.StructuredContent.(TodoListResult).Total != 1 {
 		t.Errorf("root only total = %d, want 1", lr.StructuredContent.(TodoListResult).Total)
+	}
+}
+
+func TestList_IDsDefaultToAllStatuses(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestService(t)
+
+	wr, _, _ := svc.todoWrite(ctx, nil, TodoWriteArgs{Items: "- [x] done"})
+	id := wr.StructuredContent.(TodoWriteResult).IDs[0]
+
+	lr, _, err := svc.todoList(ctx, nil, TodoListArgs{})
+	requireOK(t, lr, err)
+	if lr.StructuredContent.(TodoListResult).Total != 0 {
+		t.Errorf("default active list total = %d, want 0", lr.StructuredContent.(TodoListResult).Total)
+	}
+
+	lr, _, err = svc.todoList(ctx, nil, TodoListArgs{IDs: []string{id}})
+	requireOK(t, lr, err)
+	res := lr.StructuredContent.(TodoListResult)
+	if res.Total != 1 || len(res.Items) != 1 || res.Items[0].Status != "completed" {
+		t.Errorf("ids list = %+v, want completed item", res)
 	}
 }
 

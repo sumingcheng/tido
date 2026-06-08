@@ -40,12 +40,10 @@ type TodoView struct {
 // nowMs 用于 compact 下的相对时间渲染（agent 友好）。
 func RenderTodo(t store.Todo, mode Mode, nowMs int64) TodoView {
 	v := TodoView{
-		ID:         t.ID,
-		Content:    t.Content,
-		Status:     string(t.Status),
-		Priority:   string(t.Priority),
-		Difficulty: string(t.Difficulty),
-		Notes:      t.NotesCount,
+		ID:      t.ID,
+		Content: t.Content,
+		Status:  string(t.Status),
+		Notes:   t.NotesCount,
 	}
 	if t.ParentID != nil {
 		v.ParentID = *t.ParentID
@@ -53,10 +51,18 @@ func RenderTodo(t store.Todo, mode Mode, nowMs int64) TodoView {
 
 	switch mode {
 	case ModeCompact:
+		if t.Priority != "" && t.Priority != store.PriorityMedium {
+			v.Priority = string(t.Priority)
+		}
+		if t.Difficulty != "" && t.Difficulty != store.DifficultyMedium {
+			v.Difficulty = string(t.Difficulty)
+		}
 		if t.DueAt != nil {
 			v.DueAt = relativeDue(*t.DueAt, nowMs)
 		}
 	default: // ModeFull
+		v.Priority = string(t.Priority)
+		v.Difficulty = string(t.Difficulty)
 		if t.DueAt != nil {
 			v.DueAt = msToISO(*t.DueAt)
 		}
